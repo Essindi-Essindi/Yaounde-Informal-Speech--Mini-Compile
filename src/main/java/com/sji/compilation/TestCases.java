@@ -1,4 +1,4 @@
-package com.AI;
+package com.sji.compilation;
 import java.util.*;
 
 /**

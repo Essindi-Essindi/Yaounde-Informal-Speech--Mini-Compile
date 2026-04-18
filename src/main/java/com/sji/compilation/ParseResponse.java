@@ -1,7 +1,6 @@
-package com.AI;
+package com.sji.compilation;
 
 import java.util.List;
-import java.util.Map;
 
 public class ParseResponse {
     private String sentence;

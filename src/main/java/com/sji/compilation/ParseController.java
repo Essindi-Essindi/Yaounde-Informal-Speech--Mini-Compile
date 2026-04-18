@@ -1,4 +1,4 @@
-package com.AI;
+package com.sji.compilation;
 
 import org.springframework.web.bind.annotation.*;
 

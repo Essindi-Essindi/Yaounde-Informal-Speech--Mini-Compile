@@ -11,7 +11,7 @@
         <relativePath/>
     </parent>
 
-    <groupId>com.AI</groupId>
+    <groupId>com.sji.compilation</groupId>
     <artifactId>Yaounde_Informal_Speech_Mini_Compile</artifactId>
     <version>1.0-SNAPSHOT</version>
     <name>Yaounde_Informal_Speech_Mini_Compile</name>

@@ -1,4 +1,7 @@
 package com.AI;
+import org.springframework.boot.SpringApplication;
+import org.springframework.boot.autoconfigure.SpringBootApplication;
+
 import java.util.*;
 
 /**
@@ -16,7 +19,8 @@ import java.util.*;
  * Compile:  javac *.java
  * Run:      java Main
  */
-public class Main {
+@SpringBootApplication
+public class ParserApplication {
 
     // ────────────────────────────────────────────────────────────────
     //  ALL COLLECTED SENTENCES — real Yaoundé informal speech
@@ -191,6 +195,7 @@ public class Main {
         // ── GRAMMAR REFERENCE TABLE ───────────────────────────────
         printGrammarReference();
         printLL1Table();
+        SpringApplication.run(ParserApplication.class, args);
     }
 
     // ────────────────────────────────────────────────────────────────

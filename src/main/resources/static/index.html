@@ -1,0 +1,1470 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Yaoundé Compiler — Mini Pipeline</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link href="https://fonts.googleapis.com/css2?family=Space+Mono:ital,wght@0,400;0,700;1,400&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet"/>
+<style>
+/* ═══════════════════════════════════════════════════
+   DESIGN SYSTEM — terminal-editorial hybrid
+   Dark base, phosphor-green accents, mono code feel
+═══════════════════════════════════════════════════ */
+:root {
+  --bg:         #0d0f0e;
+  --surface:    #131614;
+  --surface2:   #1a1d1b;
+  --surface3:   #212420;
+  --border:     #2a2e2b;
+  --border2:    #353a36;
+
+  --green:      #4eed7e;
+  --green-dim:  #2a7a47;
+  --green-glow: rgba(78,237,126,0.12);
+  --red:        #ff5f5f;
+  --red-dim:    rgba(255,95,95,0.12);
+  --amber:      #f5a623;
+  --blue:       #6bb8ff;
+  --violet:     #c084fc;
+  --pink:       #f472b6;
+  --teal:       #2dd4bf;
+  --orange:     #fb923c;
+  --yellow:     #facc15;
+
+  --text:       #e8ede9;
+  --text2:      #8a9b8d;
+  --text3:      #4a5e4d;
+
+  --font-ui:    'Syne', sans-serif;
+  --font-mono:  'Space Mono', monospace;
+
+  --radius:     8px;
+  --radius-lg:  14px;
+  --sidebar-w:  300px;
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+html { scroll-behavior: smooth; }
+
+body {
+  font-family: var(--font-ui);
+  background: var(--bg);
+  color: var(--text);
+  min-height: 100vh;
+  overflow-x: hidden;
+}
+
+/* ── Scrollbar ── */
+::-webkit-scrollbar { width: 5px; height: 5px; }
+::-webkit-scrollbar-track { background: var(--surface); }
+::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--green-dim); }
+
+/* ═══════════════════ LAYOUT ═══════════════════ */
+.app {
+  display: grid;
+  grid-template-columns: var(--sidebar-w) 1fr;
+  grid-template-rows: auto 1fr;
+  grid-template-areas:
+    "topbar topbar"
+    "sidebar main";
+  min-height: 100vh;
+}
+
+/* ═══════════════════ TOPBAR ═══════════════════ */
+.topbar {
+  grid-area: topbar;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  padding: 0 1.5rem;
+  height: 56px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  position: sticky;
+  top: 0;
+  z-index: 100;
+}
+.topbar-brand {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+.topbar-logo {
+  width: 32px; height: 32px;
+  background: var(--green);
+  border-radius: 6px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 1rem; font-weight: 800; color: var(--bg);
+  font-family: var(--font-mono);
+  flex-shrink: 0;
+}
+.topbar-title {
+  font-size: 0.95rem;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  color: var(--text);
+}
+.topbar-sub {
+  font-size: 0.7rem;
+  color: var(--text2);
+  font-family: var(--font-mono);
+}
+.topbar-actions {
+  display: flex; align-items: center; gap: 0.75rem;
+}
+.topbar-badge {
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  padding: 0.25rem 0.6rem;
+  border-radius: 4px;
+  border: 1px solid var(--border2);
+  color: var(--text2);
+}
+.topbar-badge.live {
+  border-color: var(--green-dim);
+  color: var(--green);
+  background: var(--green-glow);
+  display: flex; align-items: center; gap: 0.4rem;
+}
+.topbar-badge.live::before {
+  content: '';
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: var(--green);
+  animation: pulse 1.5s ease infinite;
+}
+@keyframes pulse {
+  0%,100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.5; transform: scale(0.8); }
+}
+
+/* hamburger */
+.hamburger {
+  display: none;
+  flex-direction: column;
+  gap: 4px;
+  cursor: pointer;
+  padding: 6px;
+  border: none;
+  background: transparent;
+}
+.hamburger span {
+  display: block; width: 20px; height: 2px;
+  background: var(--text2);
+  border-radius: 1px;
+  transition: all 0.25s;
+}
+
+/* ═══════════════════ SIDEBAR ═══════════════════ */
+.sidebar {
+  grid-area: sidebar;
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  height: calc(100vh - 56px);
+  position: sticky;
+  top: 56px;
+  overflow: hidden;
+}
+
+.sidebar-search {
+  padding: 1rem;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.search-wrap {
+  position: relative;
+}
+.search-icon {
+  position: absolute; left: 0.65rem; top: 50%;
+  transform: translateY(-50%);
+  font-size: 0.8rem;
+  color: var(--text3);
+  pointer-events: none;
+}
+#searchInput {
+  width: 100%;
+  padding: 0.55rem 0.75rem 0.55rem 2rem;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  outline: none;
+  transition: border-color 0.2s;
+}
+#searchInput:focus { border-color: var(--green-dim); }
+#searchInput::placeholder { color: var(--text3); }
+
+.sidebar-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0.5rem;
+}
+.category-label {
+  padding: 0.6rem 0.5rem 0.3rem;
+  font-size: 0.62rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--green);
+  font-family: var(--font-mono);
+}
+.sentence-item {
+  padding: 0.55rem 0.65rem;
+  border-radius: var(--radius);
+  cursor: pointer;
+  border: 1px solid transparent;
+  transition: all 0.15s;
+  margin-bottom: 2px;
+}
+.sentence-item:hover {
+  background: var(--surface2);
+  border-color: var(--border);
+}
+.sentence-item.active {
+  background: var(--green-glow);
+  border-color: var(--green-dim);
+}
+.sentence-item-num {
+  font-family: var(--font-mono);
+  font-size: 0.6rem;
+  color: var(--green);
+  margin-bottom: 2px;
+}
+.sentence-item-text {
+  font-size: 0.76rem;
+  color: var(--text);
+  line-height: 1.35;
+  font-style: italic;
+  margin-bottom: 2px;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.sentence-item.active .sentence-item-text { color: var(--green); }
+.sentence-item-ctx {
+  font-size: 0.62rem;
+  color: var(--text3);
+  font-family: var(--font-mono);
+}
+
+/* ═══════════════════ MAIN ═══════════════════ */
+.main {
+  grid-area: main;
+  display: flex;
+  flex-direction: column;
+  min-height: calc(100vh - 56px);
+  padding: 1.5rem;
+  gap: 1.5rem;
+  max-width: 100%;
+  overflow-x: hidden;
+}
+
+/* ═══════════════════ INPUT PANEL ═══════════════════ */
+.input-panel {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+.panel-header {
+  padding: 0.85rem 1.25rem;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+.panel-title {
+  font-size: 0.8rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text2);
+  font-family: var(--font-mono);
+  display: flex; align-items: center; gap: 0.5rem;
+}
+.panel-title span { color: var(--green); }
+
+.input-area {
+  padding: 1rem 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+.sentence-display {
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 0.85rem 1rem;
+  font-family: var(--font-mono);
+  font-size: 0.88rem;
+  color: var(--text);
+  line-height: 1.55;
+  min-height: 56px;
+  transition: border-color 0.2s;
+  cursor: text;
+  outline: none;
+  word-break: break-word;
+}
+.sentence-display:empty::before {
+  content: 'Type a Camfranglais / Pidgin sentence or pick one from the list →';
+  color: var(--text3);
+  font-style: italic;
+}
+.sentence-display:focus { border-color: var(--green-dim); }
+
+.input-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+.context-input {
+  flex: 1;
+  min-width: 160px;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 0.55rem 0.85rem;
+  color: var(--text2);
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  outline: none;
+  transition: border-color 0.2s;
+}
+.context-input:focus { border-color: var(--border2); color: var(--text); }
+.context-input::placeholder { color: var(--text3); }
+
+.btn {
+  padding: 0.6rem 1.4rem;
+  border-radius: var(--radius);
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  cursor: pointer;
+  border: none;
+  transition: all 0.15s;
+  white-space: nowrap;
+}
+.btn-primary {
+  background: var(--green);
+  color: var(--bg);
+}
+.btn-primary:hover { background: #3dd96e; transform: translateY(-1px); }
+.btn-primary:active { transform: translateY(0); }
+.btn-primary:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
+
+.btn-ghost {
+  background: transparent;
+  color: var(--text2);
+  border: 1px solid var(--border);
+}
+.btn-ghost:hover { border-color: var(--border2); color: var(--text); background: var(--surface2); }
+
+/* Example chips */
+.examples-strip {
+  display: flex; flex-wrap: wrap; gap: 0.4rem;
+  padding: 0 1.25rem 1rem;
+}
+.example-chip {
+  padding: 0.3rem 0.7rem;
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  font-size: 0.72rem;
+  color: var(--text2);
+  font-family: var(--font-mono);
+  cursor: pointer;
+  transition: all 0.15s;
+  white-space: nowrap;
+}
+.example-chip:hover {
+  border-color: var(--green-dim);
+  color: var(--green);
+  background: var(--green-glow);
+}
+
+/* ═══════════════════ RESULTS ═══════════════════ */
+.results-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1.25rem;
+}
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+.card.full { grid-column: 1 / -1; }
+
+.card-head {
+  padding: 0.8rem 1.1rem;
+  border-bottom: 1px solid var(--border);
+  display: flex; align-items: center; gap: 0.6rem;
+  flex-wrap: wrap;
+}
+.card-head-title {
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--text2);
+  font-family: var(--font-mono);
+}
+.card-badge {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: 0.65rem;
+  padding: 0.2rem 0.55rem;
+  border-radius: 4px;
+  border: 1px solid;
+}
+.card-badge.green { border-color: var(--green-dim); color: var(--green); background: var(--green-glow); }
+.card-badge.red   { border-color: #7a2222; color: var(--red); background: var(--red-dim); }
+.card-badge.dim   { border-color: var(--border); color: var(--text3); }
+
+.card-body { padding: 1.1rem; }
+
+/* ── Verdict ── */
+.verdict {
+  display: flex;
+  align-items: flex-start;
+  gap: 1rem;
+  padding: 1.1rem;
+  border-radius: var(--radius);
+  border: 1.5px solid;
+  margin-bottom: 1rem;
+}
+.verdict.accepted {
+  background: rgba(78,237,126,0.06);
+  border-color: var(--green-dim);
+}
+.verdict.rejected {
+  background: var(--red-dim);
+  border-color: #7a2222;
+}
+.verdict-icon { font-size: 2rem; line-height: 1; flex-shrink: 0; }
+.verdict-info { display: flex; flex-direction: column; gap: 0.2rem; }
+.verdict-label {
+  font-size: 0.6rem; font-weight: 700; text-transform: uppercase;
+  letter-spacing: 0.12em; color: var(--text3); font-family: var(--font-mono);
+}
+.verdict-status {
+  font-size: 1.4rem; font-weight: 800; line-height: 1;
+}
+.accepted .verdict-status { color: var(--green); }
+.rejected .verdict-status { color: var(--red); }
+.verdict-desc { font-size: 0.8rem; color: var(--text2); line-height: 1.4; }
+
+/* parse log */
+.log-toggle {
+  width: 100%;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 0.65rem 0.85rem;
+  color: var(--text2);
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: space-between;
+  transition: all 0.15s;
+}
+.log-toggle:hover { border-color: var(--border2); color: var(--text); }
+.log-arrow { transition: transform 0.2s; display: inline-block; }
+.log-toggle.open .log-arrow { transform: rotate(90deg); }
+
+.log-content {
+  display: none;
+  margin-top: 0.5rem;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  max-height: 260px;
+  overflow-y: auto;
+}
+.log-content.open { display: block; }
+.log-line {
+  display: flex; gap: 0.75rem;
+  padding: 0.35rem 0.85rem;
+  border-bottom: 1px solid var(--border);
+  font-family: var(--font-mono);
+  font-size: 0.71rem;
+}
+.log-line:last-child { border-bottom: none; }
+.log-n { color: var(--text3); min-width: 2ch; flex-shrink: 0; }
+.log-text { color: var(--text); white-space: pre-wrap; word-break: break-word; }
+.log-line.is-accept .log-text { color: var(--green); font-weight: 700; }
+.log-line.is-reject .log-text { color: var(--red); font-weight: 700; }
+.log-line.is-consume .log-text { color: var(--blue); }
+.log-line.is-rule .log-text { color: var(--violet); }
+
+/* ── Token chips (visual stream) ── */
+.token-stream {
+  display: flex; flex-wrap: wrap; gap: 0.45rem;
+  padding: 0.85rem;
+  background: var(--surface2);
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  margin-bottom: 1rem;
+}
+.t-chip {
+  display: flex; flex-direction: column; align-items: center;
+  padding: 0.35rem 0.55rem;
+  border-radius: 6px;
+  border: 1.5px solid;
+  font-size: 0.7rem;
+  cursor: default;
+  transition: transform 0.15s, box-shadow 0.15s;
+  user-select: none;
+}
+.t-chip:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+}
+.t-lexeme { font-family: var(--font-mono); font-weight: 700; font-size: 0.78rem; line-height: 1.2; }
+.t-type { font-size: 0.56rem; text-transform: uppercase; letter-spacing: 0.07em; opacity: 0.75; margin-top: 1px; }
+
+/* ── Token table ── */
+.token-table-wrap { overflow-x: auto; }
+table.token-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8rem;
+}
+.token-table th {
+  padding: 0.55rem 0.85rem;
+  background: var(--surface2);
+  color: var(--text3);
+  font-family: var(--font-mono);
+  font-size: 0.62rem;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+  white-space: nowrap;
+}
+.token-table td {
+  padding: 0.5rem 0.85rem;
+  border-bottom: 1px solid var(--border);
+  color: var(--text);
+}
+.token-table tr:last-child td { border-bottom: none; }
+.token-table tr:hover td { background: var(--surface2); }
+.token-table .td-num { color: var(--text3); font-family: var(--font-mono); font-size: 0.72rem; }
+.token-table .td-lexeme { font-family: var(--font-mono); font-weight: 700; }
+.type-pill {
+  display: inline-flex;
+  padding: 0.18rem 0.55rem;
+  border-radius: 4px;
+  border: 1px solid;
+  font-family: var(--font-mono);
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+
+/* ── Freq bars ── */
+.freq-list { display: flex; flex-direction: column; gap: 0.55rem; }
+.freq-row { display: flex; align-items: center; gap: 0.75rem; }
+.freq-label {
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  color: var(--text2);
+  width: 110px;
+  flex-shrink: 0;
+}
+.freq-bar-wrap {
+  flex: 1;
+  height: 8px;
+  background: var(--surface2);
+  border-radius: 4px;
+  overflow: hidden;
+}
+.freq-bar {
+  height: 100%;
+  border-radius: 4px;
+  transition: width 0.7s cubic-bezier(0.16,1,0.3,1);
+}
+.freq-count {
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  color: var(--text3);
+  width: 24px;
+  text-align: right;
+  flex-shrink: 0;
+}
+
+/* ═══════════════════ EMPTY STATE ═══════════════════ */
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+  padding: 4rem 2rem;
+  text-align: center;
+}
+.empty-glyph {
+  font-size: 3.5rem;
+  line-height: 1;
+  filter: grayscale(0.4);
+}
+.empty-title { font-size: 1.1rem; font-weight: 800; color: var(--text2); }
+.empty-sub { font-size: 0.82rem; color: var(--text3); font-family: var(--font-mono); max-width: 320px; }
+
+/* ═══════════════════ LOADING ═══════════════════ */
+.loading-overlay {
+  display: none;
+  position: fixed; inset: 0;
+  background: rgba(13,15,14,0.75);
+  z-index: 200;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 1rem;
+  backdrop-filter: blur(4px);
+}
+.loading-overlay.show { display: flex; }
+.loading-spinner {
+  width: 36px; height: 36px;
+  border: 3px solid var(--border2);
+  border-top-color: var(--green);
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+.loading-text { font-family: var(--font-mono); font-size: 0.8rem; color: var(--green); }
+
+/* ═══════════════════ ERROR TOAST ═══════════════════ */
+.toast {
+  position: fixed;
+  bottom: 1.5rem; right: 1.5rem;
+  background: #2a1515;
+  border: 1px solid #7a2222;
+  color: var(--red);
+  padding: 0.85rem 1.25rem;
+  border-radius: var(--radius);
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  max-width: 360px;
+  transform: translateY(100px);
+  opacity: 0;
+  transition: all 0.3s cubic-bezier(0.16,1,0.3,1);
+  z-index: 300;
+}
+.toast.show { transform: translateY(0); opacity: 1; }
+
+/* ═══════════════════ GRAMMAR REFERENCE MODAL ═══════════════════ */
+.overlay {
+  display: none;
+  position: fixed; inset: 0;
+  background: rgba(0,0,0,0.65);
+  z-index: 150;
+  align-items: center;
+  justify-content: center;
+  padding: 1.5rem;
+  backdrop-filter: blur(3px);
+}
+.overlay.show { display: flex; }
+.modal {
+  background: var(--surface);
+  border: 1px solid var(--border2);
+  border-radius: var(--radius-lg);
+  width: 100%;
+  max-width: 800px;
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.modal-head {
+  padding: 1.1rem 1.5rem;
+  border-bottom: 1px solid var(--border);
+  display: flex; align-items: center; justify-content: space-between;
+  flex-shrink: 0;
+}
+.modal-title { font-size: 0.9rem; font-weight: 800; }
+.modal-close {
+  background: var(--surface2); border: 1px solid var(--border);
+  border-radius: var(--radius); color: var(--text2);
+  width: 32px; height: 32px;
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer; font-size: 1rem;
+  transition: all 0.15s;
+}
+.modal-close:hover { border-color: var(--border2); color: var(--text); }
+.modal-body { padding: 1.5rem; overflow-y: auto; display: flex; flex-direction: column; gap: 1.5rem; }
+
+.grammar-table-wrap { overflow-x: auto; }
+table.grammar-table {
+  width: 100%; border-collapse: collapse; font-size: 0.8rem;
+}
+.grammar-table th {
+  padding: 0.5rem 0.85rem;
+  background: var(--surface2); color: var(--text3);
+  font-family: var(--font-mono); font-size: 0.62rem;
+  text-transform: uppercase; letter-spacing: 0.1em;
+  border-bottom: 1px solid var(--border); text-align: left;
+}
+.grammar-table td {
+  padding: 0.5rem 0.85rem; border-bottom: 1px solid var(--border);
+  font-family: var(--font-mono); font-size: 0.78rem; color: var(--text);
+}
+.grammar-table tr:last-child td { border-bottom: none; }
+.grammar-table tr:hover td { background: var(--surface2); }
+.nt-pill {
+  color: var(--violet); font-weight: 700;
+}
+.rule-arrow { color: var(--amber); }
+.rule-rhs { color: var(--text); }
+.rule-note { color: var(--text3); font-size: 0.7rem; }
+
+/* ═══════════════════ RESPONSIVE ═══════════════════ */
+@media (max-width: 900px) {
+  .results-grid { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 768px) {
+  :root { --sidebar-w: 100vw; }
+
+  .app {
+    grid-template-columns: 1fr;
+    grid-template-areas:
+      "topbar"
+      "main";
+  }
+
+  .sidebar {
+    position: fixed;
+    top: 56px; left: 0;
+    width: var(--sidebar-w);
+    z-index: 90;
+    transform: translateX(-100%);
+    transition: transform 0.3s cubic-bezier(0.16,1,0.3,1);
+    height: calc(100vh - 56px);
+  }
+  .sidebar.open { transform: translateX(0); }
+
+  .hamburger { display: flex; }
+
+  .main { padding: 1rem; gap: 1rem; }
+
+  .topbar-sub { display: none; }
+}
+
+@media (max-width: 480px) {
+  .topbar { padding: 0 0.85rem; }
+  .topbar-title { font-size: 0.85rem; }
+  .topbar-badge:not(.live) { display: none; }
+  .main { padding: 0.75rem; gap: 0.75rem; }
+  .panel-header { padding: 0.7rem 0.9rem; }
+  .input-area { padding: 0.75rem 0.9rem; gap: 0.65rem; }
+  .card-head { padding: 0.65rem 0.85rem; }
+  .card-body { padding: 0.85rem; }
+  .examples-strip { padding: 0 0.9rem 0.75rem; }
+}
+
+/* ═══════════════════ ANIMATION ═══════════════════ */
+.fade-in {
+  animation: fadeIn 0.35s ease forwards;
+}
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.stagger > * {
+  opacity: 0;
+  animation: fadeIn 0.35s ease forwards;
+}
+.stagger > *:nth-child(1) { animation-delay: 0.05s; }
+.stagger > *:nth-child(2) { animation-delay: 0.12s; }
+.stagger > *:nth-child(3) { animation-delay: 0.19s; }
+.stagger > *:nth-child(4) { animation-delay: 0.26s; }
+</style>
+</head>
+<body>
+
+<!-- ═══════════════════ LOADING ═══════════════════ -->
+<div class="loading-overlay" id="loader">
+  <div class="loading-spinner"></div>
+  <div class="loading-text">Analyzing…</div>
+</div>
+
+<!-- ═══════════════════ ERROR TOAST ═══════════════════ -->
+<div class="toast" id="toast"></div>
+
+<!-- ═══════════════════ GRAMMAR MODAL ═══════════════════ -->
+<div class="overlay" id="grammarOverlay">
+  <div class="modal">
+    <div class="modal-head">
+      <div class="modal-title">📐 Grammar & LL(1) Table</div>
+      <button class="modal-close" onclick="closeModal()">✕</button>
+    </div>
+    <div class="modal-body">
+      <!-- CFG -->
+      <div>
+        <div class="panel-title" style="margin-bottom:0.75rem;">
+          <span>→</span> Context-Free Grammar (after transformations)
+        </div>
+        <div class="grammar-table-wrap">
+          <table class="grammar-table">
+            <thead><tr><th>LHS</th><th>Production</th><th>Note</th></tr></thead>
+            <tbody id="cfgBody"></tbody>
+          </table>
+        </div>
+      </div>
+      <!-- LL(1) -->
+      <div>
+        <div class="panel-title" style="margin-bottom:0.75rem;">
+          <span>→</span> LL(1) Parsing Table
+        </div>
+        <div class="grammar-table-wrap">
+          <table class="grammar-table">
+            <thead><tr><th>Non-Terminal</th><th>Input Token</th><th>Rule Applied</th></tr></thead>
+            <tbody id="ll1Body"></tbody>
+          </table>
+        </div>
+        <p style="font-family:var(--font-mono);font-size:0.7rem;color:var(--text3);margin-top:0.65rem;">
+          $ = end of input (EOF) &nbsp;|&nbsp; ε = empty production (no token consumed)
+        </p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════ APP ═══════════════════ -->
+<div class="app" id="app">
+
+  <!-- TOPBAR -->
+  <header class="topbar">
+    <div class="topbar-brand">
+      <button class="hamburger" id="hamburger" onclick="toggleSidebar()" aria-label="Menu">
+        <span></span><span></span><span></span>
+      </button>
+      <div class="topbar-logo">YC</div>
+      <div>
+        <div class="topbar-title">Yaoundé Compiler</div>
+        <div class="topbar-sub">Camfranglais · Pidgin · Informal Speech</div>
+      </div>
+    </div>
+    <div class="topbar-actions">
+      <div class="topbar-badge" id="apiStatus">● Connecting…</div>
+      <div class="topbar-badge">POST /api/v1/parse</div>
+      <button class="btn btn-ghost" style="padding:0.4rem 0.85rem;font-size:0.72rem;" onclick="openModal()">
+        📐 Grammar
+      </button>
+    </div>
+  </header>
+
+  <!-- SIDEBAR -->
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-search">
+      <div class="search-wrap">
+        <span class="search-icon">🔍</span>
+        <input id="searchInput" type="text" placeholder="Search sentences…" oninput="filterSentences()" autocomplete="off"/>
+      </div>
+    </div>
+    <div class="sidebar-list" id="sidebarList">
+      <!-- populated by JS -->
+    </div>
+  </aside>
+
+  <!-- MAIN -->
+  <main class="main" id="main">
+
+    <!-- INPUT PANEL -->
+    <div class="input-panel">
+      <div class="panel-header">
+        <div class="panel-title"><span>01</span> Input Sentence</div>
+        <button class="btn btn-ghost" style="padding:0.35rem 0.75rem;font-size:0.72rem;" onclick="clearInput()">✕ Clear</button>
+      </div>
+      <div class="input-area">
+        <div
+          id="sentenceInput"
+          class="sentence-display"
+          contenteditable="true"
+          spellcheck="false"
+          onkeydown="handleInputKey(event)"
+        ></div>
+        <div class="input-row">
+          <input id="contextInput" class="context-input" type="text"
+            placeholder="Context / label (optional)" autocomplete="off"/>
+          <button class="btn btn-primary" id="analyzeBtn" onclick="analyze()">
+            ⚡ Analyze
+          </button>
+        </div>
+      </div>
+      <div class="examples-strip" id="exampleChips">
+        <!-- populated by JS -->
+      </div>
+    </div>
+
+    <!-- RESULTS -->
+    <div id="resultsArea">
+      <!-- empty state by default -->
+      <div class="empty-state">
+        <div class="empty-glyph">🗣️</div>
+        <div class="empty-title">Ready to analyze</div>
+        <div class="empty-sub">Type or pick a Yaoundé sentence, then press Analyze</div>
+      </div>
+    </div>
+
+  </main>
+</div>
+
+<script>
+/* ═══════════════════════════════════════════════════
+   CONFIGURATION
+═══════════════════════════════════════════════════ */
+const API_BASE = 'http://localhost:8080/api/v1';
+
+/* ═══════════════════════════════════════════════════
+   TOKEN COLOR MAP
+═══════════════════════════════════════════════════ */
+const TOKEN_COLORS = {
+  VERB:         { color: '#4eed7e', desc: 'Action word — drop, go, pay, dey' },
+  NOUN:         { color: '#6bb8ff', desc: 'Person, place, thing — taxi, patron, ENEO' },
+  PRONOUN:      { color: '#f472b6', desc: 'Pronoun — I, me, you, dem, e' },
+  ADJECTIVE:    { color: '#fb923c', desc: 'Descriptor — small, fresh, cold' },
+  PREPOSITION:  { color: '#c084fc', desc: 'Relation — for, since, after, by' },
+  DETERMINER:   { color: '#facc15', desc: 'Pointer — this, the, all, every' },
+  CONJUNCTION:  { color: '#2dd4bf', desc: 'Joiner — but, and, or, when' },
+  SLANG:        { color: '#f87171', desc: 'Camfranglais marker — abeg, je wanda, wella' },
+  CODE_MIX:     { color: '#e879f9', desc: 'Mixed-language — I no sabi, I go, Na me' },
+  NUMBER:       { color: '#34d399', desc: 'Numeric — 500, 2k, 1000' },
+  INTERJECTION: { color: '#fbbf24', desc: 'Exclamation — Ekiee!, wetin, na' },
+  PUNCTUATION:  { color: '#64748b', desc: 'Delimiter — , . ! ?' },
+  UNKNOWN:      { color: '#6b7280', desc: 'Unrecognised character' },
+};
+
+/* ═══════════════════════════════════════════════════
+   39 SENTENCES DATA
+═══════════════════════════════════════════════════ */
+const SENTENCES = [
+  ["Drop me for rond-point, I go pay you after, driver no dey waste my time.", "Taxi – passenger to driver"],
+  ["Chauffeur, you no fit go Mvog-Ada? Na only Biyem-Asoa you dey do?", "Taxi – passenger asking destination"],
+  ["Place available? I dey go Melen, na 200 I get, no change.", "Taxi – negotiating fare"],
+  ["This taxi no get AC, sun dey kill person for inside, abeg open window.", "Taxi – complaint about conditions"],
+  ["Driver stop here! You don pass my own stop, I go pay half only.", "Taxi – missed stop dispute"],
+  ["E get embouteillage for carrefour, we go wait reach when? Ekiee!", "Taxi – traffic frustration"],
+  ["Na so dem dey do for this Yaoundé — one taxi, ten passenger, zero comfort.", "Taxi – general commentary"],
+  ["Abeg shift small for seat, you dey sit like say na you buy the taxi.", "Taxi – space dispute between passengers"],
+  ["Current don cut since morning, I no sabi wetin ENEO dey do with our money.", "Electricity – outage complaint"],
+  ["Light don go again! Na every night dem dey do this thing, je wanda.", "Electricity – repeated outage"],
+  ["My phone don die, generator no dey, ENEO go kill us here so.", "Electricity – no power and no backup"],
+  ["They say light go come 6pm, e don reach 10pm, nothing. Classic ENEO.", "Electricity – broken promise"],
+  ["Abeg, anybody get powerbank? This load shedding don tire me wella.", "Electricity – asking for powerbank"],
+  ["Na so we dey live — light go, light come, no schedule, no apology.", "Electricity – resignation commentary"],
+  ["The freezer don defrost, all my fish don spoil. ENEO must pay me back!", "Electricity – economic damage"],
+  ["Since dem do that transformer work for our quartier, current never stable again.", "Electricity – infrastructure complaint"],
+  ["MTN dey do me somehow, data finish but e say network unavailable. Wetin?", "Internet – MTN network issue"],
+  ["I dey try submit assignment online, connection no dey, deadline na today. Help!", "Internet – student deadline crisis"],
+  ["Orange better pass MTN for data but the two useless when rain fall.", "Internet – network comparison"],
+  ["Prof say send the work by email, but since morning my 4G na just H+.", "Internet – 4G degraded to H+"],
+  ["Somebody share hotspot abeg, I go buy data tomorrow, na emergency.", "Internet – asking for hotspot"],
+  ["Patron, lower am small, na 500 I get for pocket, no be lie.", "Market – price negotiation"],
+  ["Madame, this tomato na 1000 for three? Last week na 500. Wetin happen?", "Market – price increase complaint"],
+  ["I go take everything if you do me good price — na regular customer I be.", "Market – bulk deal negotiation"],
+  ["You dey sell spoil thing! Look this plantain, e don black for inside!", "Market – quality dispute"],
+  ["Final price be wetin? I no get time dey bargain up and down today.", "Market – closing the deal"],
+  ["Rain don start, road don become river, my shoe don finish. Yaoundé no try.", "Rain – flooding commentary"],
+  ["Abeg enter inside quick, this rain no be normal rain — na flood e be.", "Rain – flood warning"],
+  ["My umbrella fly go since that wind blow, I reach class like say I swim.", "Rain – storm damage"],
+  ["Every year same thing — rain fall, road block, government do nothing. Ekiee!", "Rain – recurring infrastructure failure"],
+  ["Essence don finish for every station, queue long reach three street.", "Fuel – scarcity"],
+  ["Black market fuel na 1000 per litre now — dem wan kill us with this thing.", "Fuel – black market price spike"],
+  ["My bike don stop for road, tank empty, no station dey near here. God help me.", "Fuel – stranded on road"],
+  ["Patron! Phone case, charger, earpiece — all dey here, come check am.", "Roadside vendor – pitch"],
+  ["You want change your money? Dollar, Euro, CFA — I get everything, good rate.", "Roadside – money changer"],
+  ["Buy cold water for me na, sun don fry my head for this place.", "Roadside – heat complaint / purchase"],
+  ["Bendskin, you know Quartier Nkolbisson? Take me there, how much you want?", "Bendskin – destination negotiation"],
+  ["Ride me fast, I dey late for work, but no kill me for road abeg!", "Bendskin – speed vs safety"],
+  ["This one na 300, Moto-man no dey negotiate. Take or find another.", "Bendskin – fixed price refusal"],
+];
+
+const CATEGORIES = [
+  { label: '🚕 Taxi', keys: ['taxi'] },
+  { label: '💡 Electricity', keys: ['electricity'] },
+  { label: '📶 Internet', keys: ['internet'] },
+  { label: '🛒 Market', keys: ['market'] },
+  { label: '🌧️ Rain', keys: ['rain'] },
+  { label: '⛽ Fuel', keys: ['fuel'] },
+  { label: '🛣️ Roadside / Bendskin', keys: ['roadside', 'bendskin'] },
+];
+
+const QUICK_EXAMPLES = [
+  "Drop me for rond-point",
+  "I dey go Melen",
+  "Abeg shift small",
+  "Current don cut",
+  "Na so we dey live",
+];
+
+/* ═══════════════════════════════════════════════════
+   CFG DATA
+═══════════════════════════════════════════════════ */
+const CFG_RULES = [
+  ["S",   "VP",                              "imperative sentence"],
+  ["S",   "INTERJECTION S",                  "interjection prefix"],
+  ["S",   "SLANG S",                         "slang / discourse prefix"],
+  ["S",   "CODE_MIX VP",                     "code-mix subject"],
+  ["S",   "NP VP",                           "full subject + predicate"],
+  ["NP",  "DETERMINER NOUN NP'",             ""],
+  ["NP",  "NOUN NP'",                        ""],
+  ["NP",  "PRONOUN NP'",                     ""],
+  ["NP",  "CODE_MIX",                        "e.g. 'Na me'"],
+  ["NP'", "NOUN NP'",                        "right-recursive, no left recursion"],
+  ["NP'", "ε",                               "epsilon — end of noun chain"],
+  ["VP",  "VERB VP'",                        ""],
+  ["VP'", "NP VP'",                          "object"],
+  ["VP'", "PP VP'",                          "prepositional phrase"],
+  ["VP'", "ADJECTIVE VP'",                   "predicate adjective"],
+  ["VP'", "SLANG VP'",                       "discourse marker"],
+  ["VP'", "CONJUNCTION VP'",                 "conjunction chain"],
+  ["VP'", "NUMBER VP'",                      "price / amount"],
+  ["VP'", "VERB VP'",                        "chained verb"],
+  ["VP'", "ε",                               "epsilon — end of VP"],
+  ["PP",  "PREPOSITION NP",                  ""],
+  ["PP",  "PREPOSITION ADJECTIVE",           ""],
+  ["PP",  "PREPOSITION NUMBER",              ""],
+];
+
+const LL1_TABLE = [
+  ["S",   "VERB",         "S → VP"],
+  ["S",   "INTERJECTION", "S → INTERJECTION S"],
+  ["S",   "SLANG",        "S → SLANG S"],
+  ["S",   "CODE_MIX",     "S → CODE_MIX VP"],
+  ["S",   "NOUN",         "S → NP VP"],
+  ["S",   "PRONOUN",      "S → NP VP"],
+  ["S",   "DETERMINER",   "S → NP VP"],
+  ["NP",  "DETERMINER",   "NP → DET NOUN NP'"],
+  ["NP",  "NOUN",         "NP → NOUN NP'"],
+  ["NP",  "PRONOUN",      "NP → PRONOUN NP'"],
+  ["NP",  "CODE_MIX",     "NP → CODE_MIX"],
+  ["NP'", "NOUN",         "NP' → NOUN NP'"],
+  ["NP'", "VERB",         "NP' → ε"],
+  ["NP'", "PREPOSITION",  "NP' → ε"],
+  ["NP'", "$",            "NP' → ε"],
+  ["VP",  "VERB",         "VP → VERB VP'"],
+  ["VP'", "PREPOSITION",  "VP' → PP VP'"],
+  ["VP'", "ADJECTIVE",    "VP' → ADJECTIVE VP'"],
+  ["VP'", "SLANG",        "VP' → SLANG VP'"],
+  ["VP'", "CONJUNCTION",  "VP' → CONJUNCTION VP'"],
+  ["VP'", "NUMBER",       "VP' → NUMBER VP'"],
+  ["VP'", "NOUN",         "VP' → NP VP'"],
+  ["VP'", "PRONOUN",      "VP' → NP VP'"],
+  ["VP'", "DETERMINER",   "VP' → NP VP'"],
+  ["VP'", "VERB",         "VP' → VERB VP'"],
+  ["VP'", "$",            "VP' → ε"],
+  ["PP",  "PREPOSITION",  "PP → PREP NP / ADJ / NUM"],
+];
+
+/* ═══════════════════════════════════════════════════
+   STATE
+═══════════════════════════════════════════════════ */
+let activeIdx = -1;
+let lastResult = null;
+
+/* ═══════════════════════════════════════════════════
+   BOOT
+═══════════════════════════════════════════════════ */
+document.addEventListener('DOMContentLoaded', () => {
+  buildSidebar();
+  buildExamples();
+  buildGrammarModal();
+  checkApiStatus();
+});
+
+/* ─── sidebar ─── */
+function buildSidebar(filter = '') {
+  const list = document.getElementById('sidebarList');
+  list.innerHTML = '';
+  const q = filter.toLowerCase();
+
+  CATEGORIES.forEach(cat => {
+    const items = SENTENCES
+      .map((s, i) => ({ s, i }))
+      .filter(({ s, i }) => {
+        const ctx = s[1].toLowerCase();
+        const matchCat = cat.keys.some(k => ctx.includes(k));
+        const matchQ = !q || s[0].toLowerCase().includes(q) || ctx.includes(q);
+        return matchCat && matchQ;
+      });
+    if (!items.length) return;
+
+    const lbl = document.createElement('div');
+    lbl.className = 'category-label';
+    lbl.textContent = cat.label;
+    list.appendChild(lbl);
+
+    items.forEach(({ s, i }) => {
+      const el = document.createElement('div');
+      el.className = 'sentence-item' + (i === activeIdx ? ' active' : '');
+      el.dataset.idx = i;
+      el.innerHTML = `
+        <div class="sentence-item-num">#${i+1}</div>
+        <div class="sentence-item-text">${escapeHtml(s[0])}</div>
+        <div class="sentence-item-ctx">${escapeHtml(s[1])}</div>
+      `;
+      el.onclick = () => selectSentence(i);
+      list.appendChild(el);
+    });
+  });
+}
+
+function filterSentences() {
+  buildSidebar(document.getElementById('searchInput').value);
+}
+
+function selectSentence(idx) {
+  activeIdx = idx;
+  buildSidebar(document.getElementById('searchInput').value);
+  document.getElementById('sentenceInput').textContent = SENTENCES[idx][0];
+  document.getElementById('contextInput').value = SENTENCES[idx][1];
+  closeSidebarOnMobile();
+}
+
+/* ─── examples ─── */
+function buildExamples() {
+  const wrap = document.getElementById('exampleChips');
+  QUICK_EXAMPLES.forEach(ex => {
+    const el = document.createElement('button');
+    el.className = 'example-chip';
+    el.textContent = ex;
+    el.onclick = () => {
+      document.getElementById('sentenceInput').textContent = ex;
+      document.getElementById('contextInput').value = '';
+      activeIdx = -1;
+    };
+    wrap.appendChild(el);
+  });
+}
+
+/* ─── grammar modal ─── */
+function buildGrammarModal() {
+  const cfgBody = document.getElementById('cfgBody');
+  CFG_RULES.forEach(([lhs, rhs, note]) => {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td><span class="nt-pill">${lhs}</span></td>
+      <td><span class="rule-arrow">→</span> <span class="rule-rhs">${escapeHtml(rhs)}</span></td>
+      <td><span class="rule-note">${note ? '// ' + note : ''}</span></td>
+    `;
+    cfgBody.appendChild(tr);
+  });
+
+  const ll1Body = document.getElementById('ll1Body');
+  LL1_TABLE.forEach(([nt, token, rule]) => {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td><span class="nt-pill">${nt}</span></td>
+      <td style="font-family:var(--font-mono);color:var(--amber)">${token}</td>
+      <td style="color:var(--text2)">${escapeHtml(rule)}</td>
+    `;
+    ll1Body.appendChild(tr);
+  });
+}
+
+/* ─── api health ─── */
+async function checkApiStatus() {
+  const el = document.getElementById('apiStatus');
+  try {
+    const res = await fetch(`${API_BASE}/parse`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain' },
+      body: 'test',
+      signal: AbortSignal.timeout(4000),
+    });
+    if (res.ok || res.status === 400) {
+      el.textContent = '● API online';
+      el.className = 'topbar-badge live';
+    } else throw new Error(res.status);
+  } catch {
+    el.textContent = '● API offline';
+    el.className = 'topbar-badge';
+    el.style.color = 'var(--red)';
+    el.style.borderColor = '#7a2222';
+  }
+}
+
+/* ═══════════════════════════════════════════════════
+   ANALYZE
+═══════════════════════════════════════════════════ */
+async function analyze() {
+  const sentenceEl = document.getElementById('sentenceInput');
+  const sentence = sentenceEl.textContent.trim();
+  if (!sentence) { showToast('Please enter a sentence first.'); return; }
+
+  showLoader(true);
+  const btn = document.getElementById('analyzeBtn');
+  btn.disabled = true;
+
+  try {
+    const res = await fetch(`${API_BASE}/parse`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain' },
+      body: sentence,
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    lastResult = data;
+    renderResults(data);
+    checkApiStatus();
+  } catch (err) {
+    showToast(`Backend error: ${err.message}. Is the server running on port 8080?`);
+  } finally {
+    showLoader(false);
+    btn.disabled = false;
+  }
+}
+
+function handleInputKey(e) {
+  if (e.key === 'Enter' && !e.shiftKey) {
+    e.preventDefault();
+    analyze();
+  }
+}
+
+/* ═══════════════════════════════════════════════════
+   RENDER RESULTS
+═══════════════════════════════════════════════════ */
+function renderResults(data) {
+  const area = document.getElementById('resultsArea');
+  const { sentence, tokens, accepted, parseLog } = data;
+
+  // Build frequency map
+  const freqMap = {};
+  tokens.forEach(t => {
+    if (t.type !== 'PUNCTUATION') {
+      freqMap[t.type] = (freqMap[t.type] || 0) + 1;
+    }
+  });
+  const maxFreq = Math.max(...Object.values(freqMap), 1);
+  const sortedFreq = Object.entries(freqMap).sort((a,b) => b[1]-a[1]);
+
+  area.innerHTML = `
+    <div class="stagger" style="display:flex;flex-direction:column;gap:1.25rem;">
+
+      <!-- Row 1: Verdict + Freq -->
+      <div class="results-grid">
+
+        <!-- PARSE RESULT -->
+        <div class="card">
+          <div class="card-head">
+            <div class="card-head-title">02 Parse Result</div>
+            <div class="card-badge ${accepted ? 'green' : 'red'}">${accepted ? '✅ ACCEPTED' : '❌ REJECTED'}</div>
+          </div>
+          <div class="card-body">
+            <div class="verdict ${accepted ? 'accepted' : 'rejected'}">
+              <div class="verdict-icon">${accepted ? '✅' : '❌'}</div>
+              <div class="verdict-info">
+                <div class="verdict-label">Parser result</div>
+                <div class="verdict-status">${accepted ? 'ACCEPTED' : 'REJECTED'}</div>
+                <div class="verdict-desc">${accepted
+                  ? 'Sentence conforms to the LL(1) grammar rules.'
+                  : 'Sentence does not fully conform to the grammar. See parse log below.'}</div>
+              </div>
+            </div>
+            <!-- parse log toggle -->
+            <button class="log-toggle" id="logToggle" onclick="toggleLog()">
+              <span>📋 Parse Trace Log <span style="color:var(--text3);font-size:0.65rem;">(${parseLog.length} steps)</span></span>
+              <span class="log-arrow">▶</span>
+            </button>
+            <div class="log-content" id="logContent">
+              ${parseLog.map((line, i) => {
+                let cls = '';
+                if (line.includes('ACCEPT')) cls = 'is-accept';
+                else if (line.includes('REJECT')) cls = 'is-reject';
+                else if (line.includes('consumed') || line.includes('✓')) cls = 'is-consume';
+                else if (line.includes('→')) cls = 'is-rule';
+                return `<div class="log-line ${cls}">
+                  <span class="log-n">${i+1}</span>
+                  <span class="log-text">${escapeHtml(line)}</span>
+                </div>`;
+              }).join('')}
+            </div>
+          </div>
+        </div>
+
+        <!-- TOKEN FREQUENCY -->
+        <div class="card">
+          <div class="card-head">
+            <div class="card-head-title">03 Token Frequency</div>
+            <div class="card-badge dim">${tokens.length} total</div>
+          </div>
+          <div class="card-body">
+            <div class="freq-list">
+              ${sortedFreq.map(([type, count]) => {
+                const col = TOKEN_COLORS[type]?.color || '#6b7280';
+                const pct = Math.round((count / maxFreq) * 100);
+                return `<div class="freq-row">
+                  <div class="freq-label">${type}</div>
+                  <div class="freq-bar-wrap">
+                    <div class="freq-bar" style="width:${pct}%;background:${col}"></div>
+                  </div>
+                  <div class="freq-count">${count}</div>
+                </div>`;
+              }).join('')}
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Row 2: Token stream (full width) -->
+      <div class="card full">
+        <div class="card-head">
+          <div class="card-head-title">04 Token Stream</div>
+          <div class="card-badge dim">${tokens.length} tokens</div>
+        </div>
+        <div class="card-body" style="padding-bottom:0.5rem;">
+          <div class="token-stream">
+            ${tokens.map(t => {
+              const info = TOKEN_COLORS[t.type] || { color: '#6b7280' };
+              const col = info.color;
+              return `<div class="t-chip"
+                style="border-color:${col};color:${col};background:${col}18"
+                title="${info.desc || t.type}">
+                <span class="t-lexeme">${escapeHtml(t.lexeme)}</span>
+                <span class="t-type">${t.type}</span>
+              </div>`;
+            }).join('')}
+          </div>
+        </div>
+      </div>
+
+      <!-- Row 3: Full token table -->
+      <div class="card full">
+        <div class="card-head">
+          <div class="card-head-title">05 Lexer Output Table</div>
+          <div class="card-badge dim">Phase 1 — Lexical Analysis</div>
+        </div>
+        <div class="card-body" style="padding:0;">
+          <div class="token-table-wrap">
+            <table class="token-table">
+              <thead>
+                <tr>
+                  <th>#</th>
+                  <th>Token Type</th>
+                  <th>Lexeme</th>
+                  <th>Description</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${tokens.map((t, i) => {
+                  const info = TOKEN_COLORS[t.type] || { color: '#6b7280', desc: '' };
+                  return `<tr>
+                    <td class="td-num">${i+1}</td>
+                    <td>
+                      <span class="type-pill"
+                        style="border-color:${info.color};color:${info.color};background:${info.color}18">
+                        ${t.type}
+                      </span>
+                    </td>
+                    <td class="td-lexeme">${escapeHtml(t.lexeme)}</td>
+                    <td style="color:var(--text3);font-size:0.76rem;">${info.desc || ''}</td>
+                  </tr>`;
+                }).join('')}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  `;
+}
+
+/* ═══════════════════════════════════════════════════
+   UI HELPERS
+═══════════════════════════════════════════════════ */
+function toggleLog() {
+  const btn = document.getElementById('logToggle');
+  const content = document.getElementById('logContent');
+  btn.classList.toggle('open');
+  content.classList.toggle('open');
+}
+
+function clearInput() {
+  document.getElementById('sentenceInput').textContent = '';
+  document.getElementById('contextInput').value = '';
+  activeIdx = -1;
+  buildSidebar();
+  document.getElementById('resultsArea').innerHTML = `
+    <div class="empty-state">
+      <div class="empty-glyph">🗣️</div>
+      <div class="empty-title">Ready to analyze</div>
+      <div class="empty-sub">Type or pick a Yaoundé sentence, then press Analyze</div>
+    </div>
+  `;
+}
+
+function showLoader(show) {
+  document.getElementById('loader').classList.toggle('show', show);
+}
+
+let toastTimer;
+function showToast(msg) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove('show'), 4500);
+}
+
+function openModal() {
+  document.getElementById('grammarOverlay').classList.add('show');
+  document.body.style.overflow = 'hidden';
+}
+function closeModal() {
+  document.getElementById('grammarOverlay').classList.remove('show');
+  document.body.style.overflow = '';
+}
+document.getElementById('grammarOverlay').addEventListener('click', e => {
+  if (e.target === document.getElementById('grammarOverlay')) closeModal();
+});
+
+function toggleSidebar() {
+  document.getElementById('sidebar').classList.toggle('open');
+}
+function closeSidebarOnMobile() {
+  if (window.innerWidth <= 768) {
+    document.getElementById('sidebar').classList.remove('open');
+  }
+}
+
+function escapeHtml(str) {
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+/* close sidebar when clicking outside on mobile */
+document.addEventListener('click', e => {
+  const sidebar = document.getElementById('sidebar');
+  const hamburger = document.getElementById('hamburger');
+  if (window.innerWidth <= 768 &&
+      sidebar.classList.contains('open') &&
+      !sidebar.contains(e.target) &&
+      !hamburger.contains(e.target)) {
+    sidebar.classList.remove('open');
+  }
+});
+</script>
+</body>
+</html>

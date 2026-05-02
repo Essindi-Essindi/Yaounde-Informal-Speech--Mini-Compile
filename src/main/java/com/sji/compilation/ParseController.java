@@ -30,6 +30,6 @@ public class ParseController {
 
         List<String> parseLog = parser.getParseLog();
 
-        return new ParseResponse(sentence, tokenDTOs, accepted, parseLog);
+        return new ParseResponse(sentence, tokenDTOs, accepted, parseLog, parser.getRecommendation());
     }
 }

@@ -1682,7 +1682,7 @@
     ═══════════════════════════════════════════════════ */
     function renderResults(data) {
       const area = document.getElementById('resultsArea');
-      const { sentence, tokens, accepted, parseLog } = data;
+      const { sentence, tokens, accepted, parseLog, recommendation } = data;
 
       // Build frequency map
       const freqMap = {};
@@ -1717,6 +1717,11 @@
           : 'Sentence does not fully conform to the grammar. See parse log below.'}</div>
               </div>
             </div>
+            ${recommendation ? `
+            <div style="margin-top: 1rem; padding: 0.85rem; background: var(--surface2); border: 1px solid var(--border); border-radius: var(--radius); border-left: 3px solid var(--amber);">
+              <div style="font-weight: bold; color: var(--amber); margin-bottom: 0.35rem; font-size: 0.85rem;">💡 Recommendation</div>
+              <div style="font-size: 0.8rem; color: var(--text2);">${escapeHtml(recommendation)}</div>
+            </div>` : ''}
             <!-- parse log toggle -->
             <button class="log-toggle" id="logToggle" onclick="toggleLog()">
               <span>📋 Parse Trace Log <span style="color:var(--text3);font-size:0.65rem;">(${parseLog.length} steps)</span></span>

@@ -19,10 +19,15 @@ public class Parser {
     private int pos;
     private List<String> parseLog;
     private boolean verbose;
+    private String recommendation;
 
     public Parser(boolean verbose) {
         this.verbose = verbose;
         this.parseLog = new ArrayList<>();
+    }
+
+    public String getRecommendation() {
+        return recommendation;
     }
 
     public boolean parse(List<Lexer.Token> tokenList) {
@@ -45,14 +50,34 @@ public class Parser {
             parseMultiClause();
             if (pos == tokens.size()) {
                 log("ACCEPT: all tokens consumed successfully");
+                this.recommendation = null;
                 return true;
             } else {
+                String tokenStr = pos < tokens.size() ? current().lexeme : "EOF";
                 log("REJECT: unconsumed tokens at position " + pos +
-                        " --> \"" + (pos < tokens.size() ? current().lexeme : "EOF") + "\"");
+                        " --> \"" + tokenStr + "\"");
+                this.recommendation = "The parser finished early. Remove unconsumed token '" + tokenStr + "' or add a comma/conjunction before it to start a new clause.";
                 return false;
             }
         } catch (ParseException e) {
-            log("REJECT: " + e.getMessage());
+            String msg = e.getMessage();
+            log("REJECT: " + msg);
+            
+            if (msg.contains("but reached end of input")) {
+                String expected = msg.substring(msg.indexOf("Expected ") + 9, msg.indexOf(" but reached"));
+                this.recommendation = "Incomplete sentence. Please provide a " + expected + " at the end.";
+            } else if (msg.contains("Expected ") && msg.contains(", but got ")) {
+                String expected = msg.substring(msg.indexOf("Expected ") + 9, msg.indexOf(" at position"));
+                String found = msg.substring(msg.indexOf("(\"") + 2, msg.lastIndexOf("\")"));
+                this.recommendation = "The word '" + found + "' is grammatically invalid here. Try removing it or replacing it with a " + expected + ".";
+            } else if (msg.contains("after DETERMINER, but found")) {
+                this.recommendation = "A determiner (like 'the' or 'this') must be followed by a noun, adjective, or verb.";
+            } else if (msg.contains("Expected sentence start")) {
+                this.recommendation = "The clause starts with an invalid word. Begin with a Noun, Pronoun, Verb, Aux, or Focus marker.";
+            } else {
+                this.recommendation = "Check the grammar rules around position " + pos + ".";
+            }
+            
             return false;
         }
     }

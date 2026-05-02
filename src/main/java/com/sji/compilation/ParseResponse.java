@@ -7,12 +7,14 @@ public class ParseResponse {
     private List<TokenDTO> tokens;
     private boolean accepted;
     private List<String> parseLog;
+    private String recommendation;
 
-    public ParseResponse(String sentence, List<TokenDTO> tokens, boolean accepted, List<String> parseLog) {
+    public ParseResponse(String sentence, List<TokenDTO> tokens, boolean accepted, List<String> parseLog, String recommendation) {
         this.sentence = sentence;
         this.tokens = tokens;
         this.accepted = accepted;
         this.parseLog = parseLog;
+        this.recommendation = recommendation;
     }
 
     public String getSentence() {
@@ -45,6 +47,14 @@ public class ParseResponse {
 
     public void setParseLog(List<String> parseLog) {
         this.parseLog = parseLog;
+    }
+
+    public String getRecommendation() {
+        return recommendation;
+    }
+
+    public void setRecommendation(String recommendation) {
+        this.recommendation = recommendation;
     }
 
     public static class TokenDTO {

@@ -21,7 +21,7 @@ public class ParseController {
         List<ParseResponse.TokenDTO> tokenDTOs = new ArrayList<>();
         for (Lexer.Token token : tokens) {
             tokenDTOs.add(new ParseResponse.TokenDTO(
-                    token.type.toString(),
+                    token.types.get(0).name(),
                     token.lexeme
             ));
         }

@@ -32,9 +32,7 @@ public class Parser {
 
         List<Lexer.Token> filtered = new ArrayList<>();
         for (Lexer.Token t : tokenList) {
-            if (t.type != Lexer.TokenType.PUNCTUATION) {
-                filtered.add(t);
-            }
+            filtered.add(t);
         }
         this.tokens = filtered;
 
@@ -50,7 +48,7 @@ public class Parser {
                 return true;
             } else {
                 log("REJECT: unconsumed tokens at position " + pos +
-                        " --> \"" + current().lexeme + "\"");
+                        " --> \"" + (pos < tokens.size() ? current().lexeme : "EOF") + "\"");
                 return false;
             }
         } catch (ParseException e) {
@@ -59,25 +57,24 @@ public class Parser {
         }
     }
 
-    /**
-     * Returns true if the current token is a Pidgin negation/aspect marker
-     * that MUST be followed by a verb (not a noun/pronoun).
-     * Covers: no, di, wan
-     */
-    private boolean isNegationMarker() {
-        if (!isType(Lexer.TokenType.VERB)) return false;
-        String lex = current().lexeme.toLowerCase();
-        return lex.equals("no") || lex.equals("di") || lex.equals("wan");
-    }
+
 
     /**
      * Top-level: handles comma-joined multi-clause sentences.
      */
     private void parseMultiClause() throws ParseException {
         parseS();
-        while (pos < tokens.size() && canStartClause()) {
-            log("Continuing to next clause at position " + pos + " --> \"" + current().lexeme + "\"");
-            parseS();
+        while (pos < tokens.size()) {
+            if (isType(Lexer.TokenType.PUNCTUATION)) {
+                consume(Lexer.TokenType.PUNCTUATION);
+            } else if (isType(Lexer.TokenType.CONJUNCTION)) {
+                consume(Lexer.TokenType.CONJUNCTION);
+            } else if (canStartClause()) {
+                log("Continuing to next clause at position " + pos + " --> \"" + current().lexeme + "\"");
+                parseS();
+            } else {
+                break;
+            }
         }
     }
 
@@ -85,7 +82,11 @@ public class Parser {
         return isType(Lexer.TokenType.INTERJECTION)
                 || isType(Lexer.TokenType.SLANG)
                 || isType(Lexer.TokenType.VERB)
+                || isType(Lexer.TokenType.AUX)
+                || isType(Lexer.TokenType.WH_PRONOUN)
+                || isType(Lexer.TokenType.FOCUS)
                 || isType(Lexer.TokenType.ADJECTIVE)
+                || isType(Lexer.TokenType.PREPOSITION)
                 || inFIRST_NP();
     }
 
@@ -107,10 +108,24 @@ public class Parser {
         } else if (isType(Lexer.TokenType.SLANG)) {
             log("Applying Rule: S -> SLANG S");
             consume(Lexer.TokenType.SLANG);
-            if (pos < tokens.size() && canStartClause()) parseS();
-
-        } else if (isType(Lexer.TokenType.VERB)) {
-            // Verb-first: imperative OR negation-first ("no vex me", "no fit go")
+            if (pos < tokens.size()) parseS();
+        } else if (isType(Lexer.TokenType.WH_PRONOUN)) {
+            log("Applying Rule: S -> WH_PRONOUN NP VP");
+            consume(Lexer.TokenType.WH_PRONOUN);
+            parseNP();
+            parseVP();
+        } else if (isType(Lexer.TokenType.FOCUS)) {
+            log("Applying Rule: S -> FOCUS NP [S]");
+            consume(Lexer.TokenType.FOCUS);
+            parseNP();
+            if (canStartClause()) parseS();
+        } else if (isType(Lexer.TokenType.PREPOSITION)) {
+            log("Applying Rule: S -> PP S");
+            parsePP();
+            if (pos < tokens.size() && canStartClause()) {
+                parseS();
+            }
+        } else if (isType(Lexer.TokenType.VERB) || isType(Lexer.TokenType.AUX)) {
             log("Applying Rule: S -> VP");
             parseVP();
 
@@ -121,41 +136,38 @@ public class Parser {
             if (pos < tokens.size() && isType(Lexer.TokenType.VERB)) parseVP();
 
         } else if (inFIRST_NP()) {
-            log("Applying Rule: S -> NP [PRONOUN] [VP]");
+            log("Applying Rule: S -> NP [VP]");
             parseNP();
-
-            // Appositive restart: "Chauffeur, you no fit go" — pronoun restarts as real subject
-            if (pos < tokens.size() && isType(Lexer.TokenType.PRONOUN)) {
-                log("Applying Rule: appositive restart — PRONOUN after NP");
-                consume(Lexer.TokenType.PRONOUN);
-            }
-
-            if (pos < tokens.size() && isType(Lexer.TokenType.VERB)) {
+            if (pos < tokens.size() && (isType(Lexer.TokenType.VERB) || isType(Lexer.TokenType.AUX) || isType(Lexer.TokenType.SLANG))) {
                 parseVP();
             }
-
         } else {
-            throw new ParseException("Expected sentence start (INTERJECTION, SLANG, VERB, ADJECTIVE, or NP), but found: "
-                    + (pos < tokens.size() ? current() : "EOF"));
+            throw new ParseException("Expected sentence start (INTERJECTION, SLANG, WH_PRONOUN, FOCUS, VERB, AUX, or NP), but found: " + (pos < tokens.size() ? current() : "EOF"));
         }
     }
 
     private void parseNP() throws ParseException {
         log("ENTER parseNP | Lookahead: " + (pos < tokens.size() ? current() : "EOF"));
         if (isType(Lexer.TokenType.DETERMINER)) {
-            log("Applying Rule: NP -> DETERMINER [NOUN|ADJECTIVE] NP'");
+            log("Applying Rule: NP -> DETERMINER [NOUN|ADJECTIVE|VERB] NP'");
             consume(Lexer.TokenType.DETERMINER);
-            if (isType(Lexer.TokenType.NOUN) || isType(Lexer.TokenType.ADJECTIVE)) {
-                consume(current().type);
+            if (isType(Lexer.TokenType.NOUN)) {
+                consume(Lexer.TokenType.NOUN);
+            } else if (isType(Lexer.TokenType.ADJECTIVE)) {
+                consume(Lexer.TokenType.ADJECTIVE);
+            } else if (isType(Lexer.TokenType.VERB)) {
+                consume(Lexer.TokenType.VERB);
+            } else {
+                throw new ParseException("Expected NOUN, ADJECTIVE, or VERB after DETERMINER, but found: " + (pos < tokens.size() ? current() : "EOF"));
             }
-            parseNP_prime();
-        } else if (isType(Lexer.TokenType.NOUN)) {
-            log("Applying Rule: NP -> NOUN NP'");
-            consume(Lexer.TokenType.NOUN);
             parseNP_prime();
         } else if (isType(Lexer.TokenType.PRONOUN)) {
             log("Applying Rule: NP -> PRONOUN NP'");
             consume(Lexer.TokenType.PRONOUN);
+            parseNP_prime();
+        } else if (isType(Lexer.TokenType.NOUN)) {
+            log("Applying Rule: NP -> NOUN NP'");
+            consume(Lexer.TokenType.NOUN);
             parseNP_prime();
         } else if (isType(Lexer.TokenType.CODE_MIX)) {
             log("Applying Rule: NP -> CODE_MIX");
@@ -177,121 +189,90 @@ public class Parser {
             consume(Lexer.TokenType.NOUN);
             parseNP_prime();
         } else {
-            log("Applying Rule: NP' -> ε (No matching extension)");
+            log("Applying Rule: NP' -> ε (Fallback)");
         }
     }
 
-    /**
-     * VP -> NEG_VERB VERB VP'   negation marker MUST be followed directly by a VERB
-     *     | VERB VP'            normal verb (non-negation)
-     *     | SLANG VP            discourse marker before verb (for SLANG-type negations)
-     *
-     * This is the key rule that rejects "no me vex":
-     *   - "no" is a NEG_VERB, so next token MUST be a VERB
-     *   - "me" is a PRONOUN → ParseException → REJECT
-     *
-     * While "no vex me" is accepted:
-     *   - "no" is NEG_VERB, next is "vex" (VERB) → consumed → VP' handles "me"
-     */
     private void parseVP() throws ParseException {
         log("ENTER parseVP | Lookahead: " + (pos < tokens.size() ? current() : "EOF"));
-
-        if (isType(Lexer.TokenType.SLANG)) {
+        if (isType(Lexer.TokenType.AUX)) {
+            log("Applying Rule: VP -> AUX [VP]");
+            consume(Lexer.TokenType.AUX);
+            if (pos < tokens.size() && (isType(Lexer.TokenType.VERB) || isType(Lexer.TokenType.AUX) || isType(Lexer.TokenType.SLANG))) {
+                parseVP();
+            } else {
+                parseVP_prime(0, 0, 0);
+            }
+        } else if (isType(Lexer.TokenType.SLANG)) {
             log("Applying Rule: VP -> SLANG VP");
             consume(Lexer.TokenType.SLANG);
             parseVP();
 
-        } else if (isType(Lexer.TokenType.VERB) && isNegationMarker()) {
-            // Negation/aspect marker: next token MUST be a VERB
-            String marker = current().lexeme;
-            log("Applying Rule: VP -> NEG_VERB VERB VP'  (negation marker: \"" + marker + "\")");
-            consume(Lexer.TokenType.VERB); // consume the negation marker (no/di/wan)
-
-            if (!isType(Lexer.TokenType.VERB)) {
-                throw new ParseException(
-                        "Negation marker \"" + marker + "\" must be followed by a VERB, but found: "
-                                + (pos < tokens.size() ? current().type + " (\"" + current().lexeme + "\")" : "EOF")
-                                + ". Did you mean \"" + marker + " [verb] ...\"?"
-                );
-            }
-            consume(Lexer.TokenType.VERB); // consume the actual verb
-            parseVP_prime();
 
         } else if (isType(Lexer.TokenType.VERB)) {
             log("Applying Rule: VP -> VERB VP'");
             consume(Lexer.TokenType.VERB);
-            parseVP_prime();
-
+            parseVP_prime(0, 0, 0);
         } else {
-            throw new ParseException("Expected Verb Phrase (SLANG or VERB), but found: "
-                    + (pos < tokens.size() ? current() : "EOF"));
+            throw new ParseException("Expected Verb Phrase (AUX, SLANG or VERB), but found: " + (pos < tokens.size() ? current() : "EOF"));
         }
     }
 
-    /**
-     * VP' -> PP VP'
-     *      | ADJECTIVE VP'
-     *      | SLANG VP'
-     *      | INTERJECTION VP'
-     *      | CONJUNCTION S
-     *      | NUMBER VP'
-     *      | PRONOUN VP'        (object pronoun: "kill us", "pay you", "vex me")
-     *      | VERB VP'           (chained verbs)
-     *      | NP VP'             (object NP)
-     *      | ε
-     */
-    private void parseVP_prime() throws ParseException {
+    private void parseVP_prime(int npCount, int verbCount, int totalCount) throws ParseException {
         log("ENTER parseVP_prime | Lookahead: " + (pos < tokens.size() ? current() : "EOF"));
         if (pos >= tokens.size()) {
             log("Applying Rule: VP' -> ε (End of tokens)");
             return;
         }
 
+        if (totalCount > 5) {
+            log("Applying Rule: VP' -> ε (Max total complements reached)");
+            return;
+        }
+
         if (isType(Lexer.TokenType.PREPOSITION)) {
             log("Applying Rule: VP' -> PP VP'");
             parsePP();
-            parseVP_prime();
-
+            parseVP_prime(npCount, verbCount, totalCount + 1);
+        } else if (isType(Lexer.TokenType.ADV)) {
+            log("Applying Rule: VP' -> ADV VP'");
+            consume(Lexer.TokenType.ADV);
+            parseVP_prime(npCount, verbCount, totalCount + 1);
         } else if (isType(Lexer.TokenType.ADJECTIVE)) {
             log("Applying Rule: VP' -> ADJECTIVE VP'");
             consume(Lexer.TokenType.ADJECTIVE);
-            parseVP_prime();
-
+            parseVP_prime(npCount, verbCount, totalCount + 1);
         } else if (isType(Lexer.TokenType.SLANG)) {
             log("Applying Rule: VP' -> SLANG VP'");
             consume(Lexer.TokenType.SLANG);
-            parseVP_prime();
-
+            parseVP_prime(npCount, verbCount, totalCount + 1);
         } else if (isType(Lexer.TokenType.INTERJECTION)) {
             log("Applying Rule: VP' -> INTERJECTION VP'");
             consume(Lexer.TokenType.INTERJECTION);
-            parseVP_prime();
-
+            parseVP_prime(npCount, verbCount, totalCount + 1);
         } else if (isType(Lexer.TokenType.CONJUNCTION)) {
             log("Applying Rule: VP' -> CONJUNCTION S");
             consume(Lexer.TokenType.CONJUNCTION);
-            if (pos < tokens.size() && canStartClause()) parseS();
-
+            parseS();
         } else if (isType(Lexer.TokenType.NUMBER)) {
             log("Applying Rule: VP' -> NUMBER VP'");
             consume(Lexer.TokenType.NUMBER);
-            parseVP_prime();
-
-        } else if (isType(Lexer.TokenType.PRONOUN)) {
-            log("Applying Rule: VP' -> PRONOUN VP'");
-            consume(Lexer.TokenType.PRONOUN);
-            parseVP_prime();
-
+            parseVP_prime(npCount, verbCount, totalCount + 1);
+        } else if (inFIRST_NP()) {
+            if (npCount >= 2) {
+                log("Applying Rule: VP' -> ε (Max 2 NP complements reached)");
+                return;
+            }
+            log("Applying Rule: VP' -> NP VP'");
+            parseNP();
+            parseVP_prime(npCount + 1, verbCount, totalCount + 1);
         } else if (isType(Lexer.TokenType.VERB)) {
             log("Applying Rule: VP' -> VERB VP'");
             consume(Lexer.TokenType.VERB);
-            parseVP_prime();
-
-        } else if (inFIRST_NP()) {
-            log("Applying Rule: VP' -> NP VP'");
-            parseNP();
-            parseVP_prime();
-
+            parseVP_prime(npCount, verbCount + 1, totalCount + 1);
+        } else if (isType(Lexer.TokenType.FOCUS)) {
+            log("Applying Rule: VP' -> FOCUS  (sentence-final emphasis particle)");
+            consume(Lexer.TokenType.FOCUS);
         } else {
             log("Applying Rule: VP' -> ε (No matching complement, exiting VP_prime)");
         }
@@ -301,27 +282,30 @@ public class Parser {
         log("ENTER parsePP | Lookahead: " + (pos < tokens.size() ? current() : "EOF"));
         log("Applying Rule: PP -> PREPOSITION [NP | ADJECTIVE | NUMBER]");
         consume(Lexer.TokenType.PREPOSITION);
+        
         if (pos < tokens.size()) {
-            if (inFIRST_NP())                          parseNP();
-            else if (isType(Lexer.TokenType.ADJECTIVE)) consume(Lexer.TokenType.ADJECTIVE);
-            else if (isType(Lexer.TokenType.NUMBER))    consume(Lexer.TokenType.NUMBER);
+            if (isType(Lexer.TokenType.ADJECTIVE)) {
+                consume(Lexer.TokenType.ADJECTIVE);
+            } else if (isType(Lexer.TokenType.NUMBER)) {
+                consume(Lexer.TokenType.NUMBER);
+            } else if (inFIRST_NP()) {
+                parseNP();
+            }
         }
     }
 
     private Lexer.Token current() { return tokens.get(pos); }
-
-    private boolean isType(Lexer.TokenType type) {
-        return pos < tokens.size() && tokens.get(pos).type == type;
-    }
+    private boolean isType(Lexer.TokenType type) { return pos < tokens.size() && tokens.get(pos).types.contains(type); }
+    private boolean isLexeme(String lex) { return pos < tokens.size() && tokens.get(pos).lexeme.equalsIgnoreCase(lex); }
 
     private void consume(Lexer.TokenType expected) throws ParseException {
         if (pos >= tokens.size())
             throw new ParseException("Expected " + expected + " but reached end of input");
         Lexer.Token t = tokens.get(pos);
-        if (t.type != expected)
-            throw new ParseException("Expected " + expected + " at position " + pos
-                    + ", but got " + t.type + " (\"" + t.lexeme + "\")");
-        log("  [MATCH] Consumed " + t.type + " (\"" + t.lexeme + "\") at position " + pos);
+        if (!t.types.contains(expected)) {
+            throw new ParseException("Expected " + expected + " at position " + pos + ", but got " + t.types + " (\"" + t.lexeme + "\")");
+        }
+        log("[MATCH] Consumed " + expected + " (\"" + t.lexeme + "\") at position " + pos);
         pos++;
     }
 
@@ -333,17 +317,30 @@ public class Parser {
     }
 
     private boolean inFOLLOW_NP() {
-        return isType(Lexer.TokenType.VERB)
-                || isType(Lexer.TokenType.PREPOSITION)
-                || isType(Lexer.TokenType.CONJUNCTION)
-                || isType(Lexer.TokenType.PRONOUN)
-                || isType(Lexer.TokenType.SLANG)
-                || isType(Lexer.TokenType.INTERJECTION);
+        return isType(Lexer.TokenType.VERB) || isType(Lexer.TokenType.AUX) || 
+               isType(Lexer.TokenType.PREPOSITION) || isType(Lexer.TokenType.CONJUNCTION) || 
+               isType(Lexer.TokenType.SLANG) || isType(Lexer.TokenType.ADJECTIVE) || 
+               isType(Lexer.TokenType.INTERJECTION) || isType(Lexer.TokenType.NUMBER);
     }
 
     private void log(String msg) {
-        parseLog.add(msg);
-        if (verbose) System.out.println("Parse log: " + msg);
+        int depth = 0;
+        for (StackTraceElement element : Thread.currentThread().getStackTrace()) {
+            String mName = element.getMethodName();
+            if (mName.startsWith("parse") && !mName.equals("parse") && !mName.equals("parseMultiClause")) {
+                depth++;
+            }
+        }
+        depth = Math.max(0, depth - 1);
+        
+        StringBuilder indent = new StringBuilder();
+        for (int i = 0; i < depth; i++) {
+            indent.append("  ");
+        }
+        
+        String formattedMsg = indent.toString() + msg;
+        parseLog.add(formattedMsg);
+        if (verbose) System.out.println("Parse log: " + formattedMsg);
     }
 
     public List<String> getParseLog() { return Collections.unmodifiableList(parseLog); }

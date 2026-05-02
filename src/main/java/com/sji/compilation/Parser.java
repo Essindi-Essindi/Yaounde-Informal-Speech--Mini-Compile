@@ -65,11 +65,16 @@ public class Parser {
     private void parseMultiClause() throws ParseException {
         parseS();
         while (pos < tokens.size()) {
-            if (isType(Lexer.TokenType.PUNCTUATION)) {
-                consume(Lexer.TokenType.PUNCTUATION);
-            } else if (isType(Lexer.TokenType.CONJUNCTION)) {
-                consume(Lexer.TokenType.CONJUNCTION);
-            } else if (canStartClause()) {
+            boolean hasSeparator = false;
+            while (pos < tokens.size() && (isType(Lexer.TokenType.PUNCTUATION) || isType(Lexer.TokenType.CONJUNCTION))) {
+                if (isType(Lexer.TokenType.PUNCTUATION)) {
+                    consume(Lexer.TokenType.PUNCTUATION);
+                } else {
+                    consume(Lexer.TokenType.CONJUNCTION);
+                }
+                hasSeparator = true;
+            }
+            if (hasSeparator && pos < tokens.size() && canStartClause()) {
                 log("Continuing to next clause at position " + pos + " --> \"" + current().lexeme + "\"");
                 parseS();
             } else {
